@@ -8,3 +8,6 @@ This is not the main AGENTS.md file. The main AGENTS.md file is: `.agents/AGENTS
 - `utils/bin` -> The executable utilities for the agents to run in sessions
 - `utils/www` -> The scripts that helps agents pull data out of the web
 - `utils/lib` -> The libraries for agentic work
+-
+
+Note: inside `.agents/docs`, you'll find the standard for POSIX kernel.

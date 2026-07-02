@@ -6,6 +6,11 @@ metadata:
   shortName: lsh
   language: C++20
   headerOnly: true
+  publicHeaders:
+    - include/LibShell.hpp
+    - include/LibShell-Kernel.hpp
+    - include/Lakposht.hpp
+    - include/Lakposht-Kernel.hpp
   posixAligned: true
   version: 0.1.0-draft
   status: draft
