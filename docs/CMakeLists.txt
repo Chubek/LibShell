@@ -5,6 +5,7 @@ set(LIBSH_DESIGN_DOCS
     design/puppeteer.md
     design/sinklets.md
     design/xi.md
+    manual/stdkern.md
 )
 
 add_custom_target(libsh-docs SOURCES ${LIBSH_DESIGN_DOCS})

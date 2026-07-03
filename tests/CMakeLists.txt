@@ -24,10 +24,26 @@ add_executable(test_runtime
     "${LIBSH_ROOT}/cli/libsh-parse.cpp"
 )
 
+add_executable(libsh
+    "${LIBSH_ROOT}/cli/libsh-cli.cpp"
+    "${LIBSH_ROOT}/cli/libsh-parse.cpp"
+)
+
+add_executable(test_cli
+    test_cli.cpp
+)
+
 target_include_directories(test_runtime PRIVATE "${LIBSH_ROOT}/include")
+target_include_directories(libsh PRIVATE "${LIBSH_ROOT}/include")
+target_include_directories(test_cli PRIVATE "${LIBSH_ROOT}/include")
 target_compile_features(test_runtime PRIVATE cxx_std_20)
+target_compile_features(libsh PRIVATE cxx_std_20)
+target_compile_features(test_cli PRIVATE cxx_std_20)
 target_compile_options(test_runtime PRIVATE -Wall -Wextra -Werror -pedantic)
+target_compile_options(libsh PRIVATE -Wall -Wextra -Werror -pedantic)
+target_compile_options(test_cli PRIVATE -Wall -Wextra -Werror -pedantic)
 
 # The suite forks real child processes (fork/execvp), so give it a working
 # directory under the build tree rather than scattering temp files.
 add_test(NAME runtime COMMAND test_runtime WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+add_test(NAME cli COMMAND test_cli WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")

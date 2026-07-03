@@ -13,6 +13,7 @@
 #include "LibShell.hpp"
 #include "LibShell-Kernel.hpp"
 #include "LibShell-Posix.hpp"
+#include "../stdkern/StdKern.hpp"
 
 #include <cstdlib>
 #include <filesystem>
@@ -286,6 +287,48 @@ void test_kernel_alias() {
     EXPECT(!registry.find("missing"), "unknown name does not resolve");
 }
 
+void test_stdkern_catalog() {
+    auto registry = lsh::stdkern::registry();
+    EXPECT(static_cast<bool>(registry->find("true")), "stdkern true registered");
+    EXPECT(static_cast<bool>(registry->find("printf")), "stdkern printf registered");
+    EXPECT(static_cast<bool>(registry->find("dirname")), "stdkern dirname registered");
+    EXPECT(lsh::stdkern::catalog().size() >= 9, "stdkern catalog is populated");
+}
+
+void test_stdkern_execution() {
+    lsh::Shell shell {std::make_shared<lsh::LocalExecutor>()};
+    shell.set_kernels(lsh::stdkern::registry());
+
+    auto mem = capture();
+    auto expr = lsh::dsl::redirect(
+        lsh::dsl::cmd("printf", "name=%s\\n", "stdkern"),
+        lsh::to_memory(lsh::RedirectStream::stdout_stream, mem));
+    auto report = shell.run(expr.program());
+    EXPECT(report.has_value() && report.value().status.success(), "stdkern printf succeeds");
+    EXPECT_EQ(mem->bytes(), std::string("name=stdkern\n"), "stdkern printf writes formatted output");
+}
+
+void test_stdkern_path_kernels() {
+    lsh::Shell shell {std::make_shared<lsh::LocalExecutor>()};
+    shell.set_kernels(lsh::stdkern::registry());
+
+    auto mem = capture();
+    auto expr = lsh::dsl::redirect(
+        lsh::dsl::cmd("dirname", "/tmp/libsh/file.txt"),
+        lsh::to_memory(lsh::RedirectStream::stdout_stream, mem));
+    auto report = shell.run(expr.program());
+    EXPECT(report.has_value() && report.value().status.success(), "stdkern dirname succeeds");
+    EXPECT_EQ(mem->bytes(), std::string("/tmp/libsh\n"), "stdkern dirname writes parent path");
+
+    mem = capture();
+    expr = lsh::dsl::redirect(
+        lsh::dsl::cmd("basename", "/tmp/libsh/file.txt", ".txt"),
+        lsh::to_memory(lsh::RedirectStream::stdout_stream, mem));
+    report = shell.run(expr.program());
+    EXPECT(report.has_value() && report.value().status.success(), "stdkern basename succeeds");
+    EXPECT_EQ(mem->bytes(), std::string("file\n"), "stdkern basename strips suffix");
+}
+
 // A sinklet transforms a stream in flight: GrepSinklet forwards only matching
 // lines to its downstream memory writer.
 void test_grep_sinklet() {
@@ -374,6 +417,9 @@ const Test k_tests[] = {
     {"subshell_isolation", test_subshell_isolation},
     {"kernel_invocation", test_kernel_invocation},
     {"kernel_alias", test_kernel_alias},
+    {"stdkern_catalog", test_stdkern_catalog},
+    {"stdkern_execution", test_stdkern_execution},
+    {"stdkern_path_kernels", test_stdkern_path_kernels},
     {"grep_sinklet", test_grep_sinklet},
     {"cli_parse_lowers_to_ir", test_cli_parse_lowers_to_ir},
     {"cli_parse_runs", test_cli_parse_runs},

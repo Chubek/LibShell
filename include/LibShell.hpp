@@ -518,6 +518,37 @@ inline bool argument_is_empty(const Argument& argument) {
            });
 }
 
+inline bool has_nul_byte(std::string_view text) { return text.find('\0') != std::string_view::npos; }
+
+inline bool expansion_kind_valid(ExpansionKind kind) {
+    switch (kind) {
+    case ExpansionKind::raw:
+    case ExpansionKind::single_quoted:
+    case ExpansionKind::double_quoted:
+    case ExpansionKind::variable:
+    case ExpansionKind::arithmetic:
+    case ExpansionKind::command:
+    case ExpansionKind::lua:
+    case ExpansionKind::glob:
+        return true;
+    }
+    return false;
+}
+
+inline void validate_argument(const Argument& argument, ValidationReport& report, const std::string& path) {
+    for (std::size_t index = 0; index < argument.fragments.size(); ++index) {
+        const Expansion& fragment = argument.fragments[index];
+        std::string fragment_path = path;
+        append_path(fragment_path, "frag" + std::to_string(index));
+        if (!expansion_kind_valid(fragment.kind)) {
+            diagnose(report, ErrorCode::bad_expansion, "argument contains an unknown expansion kind", fragment_path);
+        }
+        if (has_nul_byte(fragment.text)) {
+            diagnose(report, ErrorCode::bad_expansion, "argument contains NUL byte", fragment_path);
+        }
+    }
+}
+
 inline void validate_redirection(const Redirection& redirection, ValidationReport& report, const std::string& path) {
     if (redirection.mode == RedirectMode::read && redirection.stream != RedirectStream::stdin_stream) {
         diagnose(report, ErrorCode::invalid_redirection, "read redirection is only valid for stdin", path);
@@ -561,6 +592,12 @@ inline void validate_redirection(const Redirection& redirection, ValidationRepor
 inline void validate_command(const Command& command_node, ValidationReport& report, const std::string& path) {
     if (command_node.argv.empty() || argument_is_empty(command_node.argv.front())) {
         diagnose(report, ErrorCode::empty_argv, "command argv must contain an executable argument", path);
+    }
+
+    for (std::size_t index = 0; index < command_node.argv.size(); ++index) {
+        std::string arg_path = path;
+        append_path(arg_path, "argv" + std::to_string(index));
+        validate_argument(command_node.argv[index], report, arg_path);
     }
 
     for (std::size_t index = 0; index < command_node.redirections.size(); ++index) {
