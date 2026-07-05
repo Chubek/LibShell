@@ -8,6 +8,7 @@ option(LIBSH_BUILD_TESTS "Build LibShell test targets" ON)
 option(LIBSH_BUILD_EXAMPLES "Build LibShell example targets" ON)
 option(LIBSH_BUILD_STDKERN "Enable libsh_stdkern interface target" ON)
 option(LIBSH_BUILD_CLI "Build LibShell CLI target" ON)
+option(LIBSHELL_GENERATE_DOCS "Generate and install LibShell documentation" ON)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -29,6 +30,10 @@ endif()
 
 if(LIBSH_BUILD_TESTS)
     add_subdirectory(tests)
+endif()
+
+if(LIBSHELL_GENERATE_DOCS)
+    add_subdirectory(docs)
 endif()
 
 configure_file(
