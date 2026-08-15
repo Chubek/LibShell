@@ -17,8 +17,8 @@ add_executable(test_cli
     test_cli.cpp
 )
 
-target_include_directories(test_runtime PRIVATE "${LIBSH_ROOT}/include")
-target_include_directories(test_cli PRIVATE "${LIBSH_ROOT}/include")
+target_link_libraries(test_runtime PRIVATE libshell::libshell)
+target_link_libraries(test_cli PRIVATE libshell::libshell)
 target_compile_features(test_runtime PRIVATE cxx_std_20)
 target_compile_features(test_cli PRIVATE cxx_std_20)
 target_compile_options(test_runtime PRIVATE -Wall -Wextra -Werror -pedantic)

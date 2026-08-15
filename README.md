@@ -688,45 +688,32 @@ To make kernels more robust, Libsh should define:
 
 ## Inline Lua Scripts
 
-By including `QaMRpp.hpp`, Libsh can evaluate inline scripts from C++ or from `libsh-cli`.
+Libsh evaluates inline scripts through its QaMRpp adapter; QaMRpp types do not leak through the public API.
 
 ### Example: Arithmetic Preprocessing
 
 ```cpp
-auto lua_script = R"(
-return lshmath.add(40, 2)
-)";
-
-shell.set_assign("ANSWER", lsh::arith(lsh::lua(lua_script)));
+shell.env().set("BASE", "40");
+auto expression = lsh::dsl::cmd("echo", lsh::lua("return BASE + 2"));
+shell.run(expression.program());
 ```
 
 ### Example: String Normalization
 
 ```cpp
-auto lua_script = R"(
-local s = "  Libsh Shell  "
-return s:gsub("^%s+", ""):gsub("%s+$", "")
-)";
-
-shell.set_assign("TITLE", lsh::lua(lua_script));
+shell.env().set("TITLE", "Libsh Shell");
+auto expression = lsh::dsl::cmd("echo", lsh::lua("return TITLE .. ' runtime'"));
+shell.run(expression.program());
 ```
 
 ### Runtime Podlets
 
-Libsh may preload several podlets for inline scripts, for example:
+Inline expansions expose only:
 
-- `lshio` for shell I/O helpers,
-- `lshmath` for advanced math,
-- `lshparse` for parsing utilities,
-- `lshci` for CI-oriented helpers,
-- `lshxi` for interoperability adapters.
+- identifier-safe shell environment names as globals;
+- `env("NAME")` for any environment key.
 
-These are powerful features, but the document should separate:
-
-- what is always loaded,
-- what is optional,
-- what is safe inside sandboxed shells,
-- what is available in CLI mode only.
+QaMRpp standard libraries are not loaded for inline expansion; filesystem and process capabilities are not implicitly granted.
 
 ### Recommended Improvements
 

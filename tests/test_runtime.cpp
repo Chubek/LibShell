@@ -146,6 +146,42 @@ void test_arithmetic_expansion() {
     EXPECT_EQ(mem->bytes(), std::string("42\n"), "arithmetic evaluated");
 }
 
+// QaMRpp is the default Lua backend. Shell variables are exposed through the
+// explicit env(NAME) capability and identifier-safe names are Lua globals.
+void test_lua_expansion() {
+    auto mem = capture();
+    lsh::Shell shell = local_shell();
+    shell.env().set("PROJECT", "libsh");
+    shell.env().set("DASH-NAME", "visible-through-env");
+    auto expr = lsh::dsl::redirect(
+        lsh::dsl::cmd("echo", lsh::lua("return PROJECT .. ':' .. env('DASH-NAME') .. ':' .. (6 * 7)")),
+        lsh::to_memory(lsh::RedirectStream::stdout_stream, mem));
+    auto report = shell.run(expr.program());
+    EXPECT(report.has_value() && report.value().status.success(), "Lua expansion succeeds");
+    EXPECT_EQ(mem->bytes(), std::string("libsh:visible-through-env:42\n"), "QaMRpp evaluated Lua with shell environment");
+}
+
+void test_lua_failure_is_diagnostic() {
+    lsh::Shell shell = local_shell();
+    auto report = shell.run(lsh::dsl::cmd("echo", lsh::lua("return (")).program());
+    EXPECT(!report.has_value(), "invalid Lua rejects execution");
+    if (!report) {
+        EXPECT(report.error().code == lsh::ErrorCode::bad_expansion, "Lua parse error is a bad expansion");
+    }
+}
+
+void test_redirect_does_not_mutate_source_expression() {
+    auto mem = capture();
+    auto base = lsh::dsl::cmd("echo", "unredirected");
+    auto redirected = lsh::dsl::redirect(
+        base, lsh::to_memory(lsh::RedirectStream::stdout_stream, mem));
+
+    const auto& base_command = std::get<lsh::ir::Command>(base.node()->value);
+    const auto& redirected_command = std::get<lsh::ir::Command>(redirected.node()->value);
+    EXPECT(base_command.redirections.empty(), "redirect leaves source IR immutable");
+    EXPECT(redirected_command.redirections.size() == 1, "redirected IR owns its redirection");
+}
+
 // Command substitution re-enters the runtime via the scripting backend. Wiring
 // the CLI parser as the parse hook lets $(...) use the full grammar.
 void test_command_substitution() {
@@ -369,6 +405,17 @@ void test_cli_parse_lowers_to_ir() {
     }
 }
 
+void test_cli_escape_preserves_following_input() {
+    auto parsed = lsh::cli::parse_line("echo alpha\\ beta");
+    EXPECT(parsed.has_value(), "escaped CLI word parses");
+    if (!parsed) return;
+    const auto* command = std::get_if<lsh::ir::Command>(&parsed.value().root->value);
+    EXPECT(command != nullptr && command->argv.size() == 2, "escaped space remains in one argument");
+    if (command && command->argv.size() == 2) {
+        EXPECT_EQ(command->argv[1].fragments.front().text, std::string("alpha beta"), "escape does not skip the next character");
+    }
+}
+
 // A parsed line runs end-to-end through the real executor.
 void test_cli_parse_runs() {
     auto mem = capture();
@@ -409,6 +456,9 @@ const Test k_tests[] = {
     {"builtin_echo_capture", test_builtin_echo_capture},
     {"variable_expansion", test_variable_expansion},
     {"arithmetic_expansion", test_arithmetic_expansion},
+    {"lua_expansion", test_lua_expansion},
+    {"lua_failure_is_diagnostic", test_lua_failure_is_diagnostic},
+    {"redirect_does_not_mutate_source_expression", test_redirect_does_not_mutate_source_expression},
     {"command_substitution", test_command_substitution},
     {"buffered_pipeline", test_buffered_pipeline},
     {"external_pipeline", test_external_pipeline},
@@ -422,6 +472,7 @@ const Test k_tests[] = {
     {"stdkern_path_kernels", test_stdkern_path_kernels},
     {"grep_sinklet", test_grep_sinklet},
     {"cli_parse_lowers_to_ir", test_cli_parse_lowers_to_ir},
+    {"cli_escape_preserves_following_input", test_cli_escape_preserves_following_input},
     {"cli_parse_runs", test_cli_parse_runs},
     {"exported_env_reaches_child", test_exported_env_reaches_child},
 };

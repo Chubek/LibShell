@@ -9,7 +9,7 @@ set(LIBSH_ROOT "${CMAKE_CURRENT_LIST_DIR}/..")
 add_library(libsh_cli_parse OBJECT
     libsh-parse.cpp
 )
-target_include_directories(libsh_cli_parse PUBLIC "${LIBSH_ROOT}/include")
+target_link_libraries(libsh_cli_parse PUBLIC libshell::libshell)
 target_compile_features(libsh_cli_parse PUBLIC cxx_std_20)
 target_compile_options(libsh_cli_parse PRIVATE -Wall -Wextra -Werror -pedantic)
 
@@ -17,7 +17,7 @@ add_executable(libsh
     libsh-cli.cpp
     $<TARGET_OBJECTS:libsh_cli_parse>
 )
-target_include_directories(libsh PRIVATE "${LIBSH_ROOT}/include")
+target_link_libraries(libsh PRIVATE libshell::libshell)
 target_compile_features(libsh PRIVATE cxx_std_20)
 target_compile_options(libsh PRIVATE -Wall -Wextra -Werror -pedantic)
 

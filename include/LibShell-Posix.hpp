@@ -972,10 +972,19 @@ private:
                 target.memory = capture;
                 spec.redirections.push_back(Redirection {.stream = RedirectStream::stdout_stream, .mode = RedirectMode::truncate, .target = std::move(target)});
             }
-            if (i > 0 && !stdin_payload.empty()) {
-                write_temp_handoff(spec, stdin_payload);
+            std::optional<std::filesystem::path> handoff;
+            if (i > 0) {
+                auto created = write_temp_handoff(spec, stdin_payload);
+                if (!created) {
+                    return created.error();
+                }
+                handoff = std::move(created).value();
             }
             auto sub = run(spec);
+            if (handoff) {
+                std::error_code ec;
+                std::filesystem::remove(*handoff, ec);
+            }
             if (!sub) {
                 return sub.error();
             }
@@ -988,18 +997,31 @@ private:
         return report;
     }
 
-    static void write_temp_handoff(ExecSpec& spec, const std::string& payload) {
+    static Result<std::filesystem::path> write_temp_handoff(ExecSpec& spec, std::string_view payload) {
         char path[] = "/tmp/libsh.XXXXXX";
         int fd = ::mkstemp(path);
         if (fd < 0) {
-            return;
+            return Diagnostic {ErrorCode::io_error, "pipeline handoff creation failed", {}};
         }
-        ::write(fd, payload.data(), payload.size());
+        std::size_t offset = 0;
+        while (offset < payload.size()) {
+            const ssize_t written = ::write(fd, payload.data() + offset, payload.size() - offset);
+            if (written < 0) {
+                if (errno == EINTR) {
+                    continue;
+                }
+                ::close(fd);
+                ::unlink(path);
+                return Diagnostic {ErrorCode::io_error, "pipeline handoff write failed", path};
+            }
+            offset += static_cast<std::size_t>(written);
+        }
         ::close(fd);
         StdioTarget target;
         target.kind = StdioTargetKind::file;
         target.file = path;
         spec.redirections.push_back(Redirection {.stream = RedirectStream::stdin_stream, .mode = RedirectMode::read, .target = std::move(target)});
+        return std::filesystem::path(path);
     }
 
     // RAII holder for builtin/kernel Writers (keeps ofstreams alive).
@@ -1008,15 +1030,20 @@ private:
         std::shared_ptr<Writer> writer_for(const ExecSpec& spec, RedirectStream stream) {
             const Redirection* redirection = posix::redirection_for(spec.redirections, stream);
             StdioTargetKind kind = redirection ? redirection->target.kind : StdioTargetKind::inherit;
+            std::shared_ptr<Writer> writer;
             switch (kind) {
             case StdioTargetKind::memory:
-                return redirection->target.memory;
+                writer = redirection->target.memory;
+                break;
             case StdioTargetKind::sinklet:
-                return std::make_shared<SinkletWriter>(redirection->target.sinklet);
+                writer = std::make_shared<SinkletWriter>(redirection->target.sinklet);
+                break;
             case StdioTargetKind::null_device:
-                return std::make_shared<NullWriter>();
+                writer = std::make_shared<NullWriter>();
+                break;
             case StdioTargetKind::fd:
-                return std::make_shared<FdWriter>(*redirection->target.fd);
+                writer = std::make_shared<FdWriter>(*redirection->target.fd);
+                break;
             case StdioTargetKind::file: {
                 auto ofs = std::make_shared<std::ofstream>();
                 std::ios_base::openmode mode = std::ios_base::out;
@@ -1024,22 +1051,34 @@ private:
                     mode |= std::ios_base::app;
                 }
                 ofs->open(*redirection->target.file, mode);
-                auto writer = std::make_shared<OstreamWriter>(*ofs);
+                writer = std::make_shared<OstreamWriter>(*ofs);
                 streams_.push_back(std::move(ofs));
-                return writer;
+                break;
             }
             case StdioTargetKind::inherit:
             case StdioTargetKind::pipe:
             default:
-                return std::make_shared<FdWriter>(stream == RedirectStream::stdin_stream ? 0 : (stream == RedirectStream::stderr_stream ? 2 : 1));
+                writer = std::make_shared<FdWriter>(stream == RedirectStream::stdin_stream ? 0 : (stream == RedirectStream::stderr_stream ? 2 : 1));
+                break;
             }
+            writers_.push_back(writer);
+            return writer;
         }
-        void close() { streams_.clear(); }
+        void close() {
+            for (const auto& writer : writers_) {
+                if (writer) {
+                    (void)writer->close();
+                }
+            }
+            writers_.clear();
+            streams_.clear();
+        }
 
     private:
         // File streams kept alive here for the duration of the call; memory
         // writers are owned by their redirection target.
         std::vector<std::shared_ptr<std::ofstream>> streams_;
+        std::vector<std::shared_ptr<Writer>> writers_;
     };
 
     std::shared_ptr<BuiltinRegistry> builtins_;

@@ -161,6 +161,10 @@ private:
     std::map<std::string, EnvVar, std::less<>> vars_;
 };
 
+namespace detail {
+Result<std::string> eval_qamrpp_lua(std::string_view script, const Environment& environment);
+}
+
 class Writer {
 public:
     virtual ~Writer() = default;
@@ -847,8 +851,9 @@ inline bool append_pipeline_commands(const ir::NodePtr& node, std::vector<ir::Co
 [[nodiscard]] inline Expr redirect(Expr subject, Redirection redirection) {
     if (subject.node()) {
         if (auto* command = std::get_if<ir::Command>(&subject.node()->value)) {
-            command->redirections.push_back(std::move(redirection));
-            return subject;
+            auto copy = *command;
+            copy.redirections.push_back(std::move(redirection));
+            return Expr {ir::command(std::move(copy), subject.node()->debug_name)};
         }
     }
     return Expr {ir::node(ir::Redirected {.subject = subject.node(), .redirections = {std::move(redirection)}}, "redirect")};
@@ -857,8 +862,9 @@ inline bool append_pipeline_commands(const ir::NodePtr& node, std::vector<ir::Co
 [[nodiscard]] inline Expr redirect(Expr subject, std::vector<Redirection> redirections) {
     if (subject.node()) {
         if (auto* command = std::get_if<ir::Command>(&subject.node()->value)) {
-            command->redirections.insert(command->redirections.end(), redirections.begin(), redirections.end());
-            return subject;
+            auto copy = *command;
+            copy.redirections.insert(copy.redirections.end(), redirections.begin(), redirections.end());
+            return Expr {ir::command(std::move(copy), subject.node()->debug_name)};
         }
     }
     return Expr {ir::node(ir::Redirected {.subject = subject.node(), .redirections = std::move(redirections)}, "redirect")};
@@ -1126,12 +1132,12 @@ public:
             if (scripting_) {
                 return scripting_->eval_command(expansion.text, environment);
             }
-            return std::string {};
+            return Diagnostic {ErrorCode::bad_expansion, "command substitution backend is unavailable", expansion.text};
         case ExpansionKind::lua:
             if (scripting_) {
                 return scripting_->eval_lua(expansion.text, environment);
             }
-            return std::string {};
+            return Diagnostic {ErrorCode::bad_expansion, "Lua backend is unavailable", expansion.text};
         case ExpansionKind::glob:
             return expansion.text;
         }
@@ -1257,10 +1263,11 @@ private:
 class Shell;
 
 // Concrete ScriptingBackend wired to a Shell. Command substitution re-enters
-// the runtime: it parses (or whitespace-splits, when no parse hook is set) the
-// script, runs it with stdout captured into a MemoryWriter, and returns the
-// captured bytes with trailing newlines trimmed. Lua is passthrough here (no
-// embedded interpreter); wire a custom backend for real Lua evaluation.
+// the runtime. Lua evaluation uses a fresh QaMRpp context per expansion:
+// host environment is exposed through env(NAME), and identifier-safe variable
+// names are also available as read-only Lua globals. QaMRpp standard libraries
+// are intentionally not loaded; inline expansion does not acquire filesystem
+// or process capabilities by default.
 class ShellScriptingBackend final : public ScriptingBackend {
 public:
     using ParseHook = std::function<Result<ir::Program>(std::string_view)>;
@@ -1270,7 +1277,7 @@ public:
     void set_parse_hook(ParseHook hook) { parse_hook_ = std::move(hook); }
 
     Result<std::string> eval_command(std::string_view script, const Environment& environment) override;
-    Result<std::string> eval_lua(std::string_view script, const Environment& /*environment*/) override { return std::string(script); }
+    Result<std::string> eval_lua(std::string_view script, const Environment& environment) override;
 
 private:
     Shell* shell_;
@@ -1574,6 +1581,10 @@ inline Result<std::string> ShellScriptingBackend::eval_command(std::string_view 
         out.pop_back();
     }
     return out;
+}
+
+inline Result<std::string> ShellScriptingBackend::eval_lua(std::string_view script, const Environment& environment) {
+    return detail::eval_qamrpp_lua(script, environment);
 }
 
 } // namespace lsh
