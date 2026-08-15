@@ -24,6 +24,7 @@ function(add_libsh_api_example name)
     target_include_directories(${name} PRIVATE "${LIBSH_ROOT}/include" "${CMAKE_CURRENT_LIST_DIR}")
     target_compile_features(${name} PRIVATE cxx_std_20)
     target_compile_options(${name} PRIVATE -Wall -Wextra -Werror -pedantic)
+    target_link_libraries(${name} PRIVATE libshell::libshell)
 endfunction()
 
 add_libsh_api_example(01_dry_run_plan)
